@@ -101,6 +101,9 @@ def ur5_inverse_kinematics(desired_t_matrix:np.ndarray,shoulder="left",wrist="up
         (x_0_ref_6[0] * np.sin(theta_1) - y_0_ref_6[0] * np.cos(theta_1))/np.sin(theta_5)
         )
 
+    # Utilizei o material de Ryan Keating para determinar os próximos ângulos.
+    # O material de Andersen utiliza a convenção DH modificada.
+
     # Determinação de theta_3.
     # Determinação das matrizes de transformação.
     #t_m_to_n é o equivalente a T_{m}^{n}
@@ -117,15 +120,15 @@ def ur5_inverse_kinematics(desired_t_matrix:np.ndarray,shoulder="left",wrist="up
     t_6_to_4 = t_5_to_4 @ t_6_to_5
     # Transforma de 4 para 6, de 6 para 0 e de 0 para 1.
     t_4_to_1 = t_6_to_1 @ np.linalg.inv(t_6_to_4)
-    p_4_ref_1 = t_4_to_1 @ np.array([0,0,0,1]).T
-    p_4xz = np.hypot(p_4_ref_1[2],p_4_ref_1[0])
-    cos_theta_3 = (p_4xz**2 - UR5Params.a[1]**2 - UR5Params.a[2]**2)/(2 * UR5Params.a[1] * UR5Params.a[2])
+    p_3_ref_1 = (t_4_to_1 @ np.array([0,-UR5Params.d[3],0,1])) - [0,0,0,1]
+    p_3norm = np.linalg.norm(p_3_ref_1)
+    cos_theta_3 = (p_3norm**2 - UR5Params.a[1]**2 - UR5Params.a[2]**2)/(2 * UR5Params.a[1] * UR5Params.a[2])
     theta_3 = np.acos(cos_theta_3)
     if elbow == "down":
         theta_3 = - theta_3
 
     # Determinação de theta_2.
-    theta_2 = np.atan2(-p_4_ref_1[2],-p_4_ref_1[0]) - np.asin(-UR5Params.a[2] * np.sin(theta_3)/(p_4xz))
+    theta_2 = -np.atan2(p_3_ref_1[1],-p_3_ref_1[0]) + np.asin(UR5Params.a[2] * np.sin(theta_3)/(p_3norm))
 
     # Determinação de theta_4.
     t_3_to_2 = build_dh_matrix(
@@ -138,7 +141,7 @@ def ur5_inverse_kinematics(desired_t_matrix:np.ndarray,shoulder="left",wrist="up
     t_4_to_3 = np.linalg.inv(t_3_to_1) @ t_4_to_1
     x_4_ref_3 = t_4_to_3 @ np.array([1,0,0,0])
     theta_4 = np.atan2(x_4_ref_3[1],x_4_ref_3[0])
-
+    print(f"Soma {np.rad2deg(theta_2+theta_3+theta_4)}")
     return [theta_1,theta_2, theta_3, theta_4, theta_5, theta_6]
 
 def set_joints_position(joints_num:list[int],joints_params:list[float]):
@@ -176,13 +179,16 @@ def get_Tmatrix(joints_handles:list[int],ref_handle:int):
 #sim = client.require("sim")
 
 def main_model():
-    joints_params = np.deg2rad([10, -40, 50, 20, 30, 40])
+    joints_params = np.deg2rad([140, -40, 74.2, 20, 45, 40])
     model_T = ur5_forward_kinematics(joints_params)
     print("Model Matrix")
     print(model_T.round(5))
     desired_q_params = ur5_inverse_kinematics(model_T)
+    ik_model_T = ur5_forward_kinematics(desired_q_params)
     print("Joints params values:")
     print(np.rad2deg(desired_q_params))
+    print("Transformation Matrix with IK joints values.")
+    print(ik_model_T.round(5))
 
 def main():
     sim.setStepping(True)
