@@ -9,4 +9,5 @@ dependencies = [
     "mypy>=2.1.0",
     "numpy>=2.4.6",
     "seaborn>=0.13.2",
+    "types-seaborn>=0.13.2.20260518",
 ]
