@@ -169,8 +169,8 @@ def get_position_error(sim_matrix:np.ndarray,model_matrix:np.ndarray) -> np.ndar
     error_vector = error_vector [:3,3]
     return error_vector
  
-def get_Tmatrix(joints_handles:list[int],ref_handle:int):
-    sim_T = sim.getObjectMatrix(joints_handles[-1],ref_handle)
+def get_Tmatrix(target_handle,ref_handle:int):
+    sim_T = sim.getObjectMatrix(target_handle,ref_handle)
     sim_T = np.reshape(sim_T,(3,4))
     sim_T = np.concatenate((sim_T,[[0,0,0,1]]),axis=0)
     return sim_T
@@ -194,12 +194,13 @@ def main():
     sim.setStepping(True)
     sim.startSimulation()
     base_handle = sim.getObject('/UR5/frame0')
+    target_handle = sim.getObject('/UR5/connection')
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
     joints_handles = get_joints_handlers(joints_paths)
     joints_params = [0,0,0,0,0,0]
 
     set_joints_position(joints_handles,joints_params)
-    sim_T = get_Tmatrix(joints_handles,base_handle)
+    sim_T = get_Tmatrix(target_handle,base_handle)
     model_T = ur5_forward_kinematics(joints_params)
     print("Model Matrix 2")
     print(model_T.round(5))
