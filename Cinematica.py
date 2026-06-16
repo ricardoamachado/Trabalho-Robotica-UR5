@@ -11,7 +11,7 @@ class DHModel:
 
 @dataclass
 class UR5Params:
-    d = (0.089159,0,0,0.10915,0.09465,0.0823)
+    d = (0.089159,0,0,0.10915,0.09465,0.0823 + 0.088)
     a = (0,-0.425,-0.39225,0,0,0)
     alpha = (np.pi/2,0,0,np.pi/2,-np.pi/2,0)
 
@@ -194,11 +194,10 @@ def main():
     sim.setStepping(True)
     sim.startSimulation()
     base_handle = sim.getObject('/UR5/frame0')
-    target_handle = sim.getObject('/UR5/connection')
+    target_handle = sim.getObject('/UR5/ROBOTIQ85/attachPoint')
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
     joints_handles = get_joints_handlers(joints_paths)
-    joints_params = [0,0,0,0,0,0]
-
+    joints_params = [0,0,np.pi/2,np.pi/2,0,0]
     set_joints_position(joints_handles,joints_params)
     sim_T = get_Tmatrix(target_handle,base_handle)
     model_T = ur5_forward_kinematics(joints_params)
