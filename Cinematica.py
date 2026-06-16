@@ -197,7 +197,8 @@ def main():
     target_handle = sim.getObject('/UR5/ROBOTIQ85/attachPoint')
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
     joints_handles = get_joints_handlers(joints_paths)
-    joints_params = [0,0,np.pi/2,np.pi/2,0,0]
+    joints_params = [0,0,np.pi/2,np.pi/2,0,np.pi/6]
+    joints_params = np.random.uniform(-1,1,6) * np.pi
     set_joints_position(joints_handles,joints_params)
     sim_T = get_Tmatrix(target_handle,base_handle)
     model_T = ur5_forward_kinematics(joints_params)
