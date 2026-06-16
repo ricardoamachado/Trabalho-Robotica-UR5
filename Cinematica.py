@@ -175,8 +175,8 @@ def get_Tmatrix(joints_handles:list[int],ref_handle:int):
     sim_T = np.concatenate((sim_T,[[0,0,0,1]]),axis=0)
     return sim_T
 
-#client = RemoteAPIClient()
-#sim = client.require("sim")
+client = RemoteAPIClient()
+sim = client.require("sim")
 
 def main_model():
     joints_params = np.deg2rad([140, -40, 74.2, 20, 45, 40])
@@ -193,7 +193,7 @@ def main_model():
 def main():
     sim.setStepping(True)
     sim.startSimulation()
-    base_handle = sim.getObject('/UR5')
+    base_handle = sim.getObject('/UR5/frame0')
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
     joints_handles = get_joints_handlers(joints_paths)
     joints_params = [0,0,0,0,0,0]
@@ -209,4 +209,4 @@ def main():
     sim.stopSimulation()
 
 if __name__ == '__main__':
-    main_model()
+    main()
