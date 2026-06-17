@@ -1,6 +1,9 @@
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import numpy as np
 from dataclasses import dataclass
+import seaborn as sns
+import matplotlib.pyplot as plt
+
 
 @dataclass
 class DHModel:
@@ -144,6 +147,31 @@ def ur5_inverse_kinematics(desired_t_matrix:np.ndarray,shoulder="left",wrist="up
     print(f"Soma {np.rad2deg(theta_2+theta_3+theta_4)}")
     return [theta_1,theta_2, theta_3, theta_4, theta_5, theta_6]
 
+
+def tmatrix_to_angles(transform_matrix:np.ndarray):
+    assert transform_matrix.shape == (4,4)
+    rot_matrix = transform_matrix[:3, :3].copy()
+    
+    # Threshold para verificar singularidade
+    tolerance = 1e-6
+    
+    if abs(rot_matrix[0, 2]) < (1.0 - tolerance):
+        # Caso não singular (sin(beta) != 0)
+        beta = np.asin(rot_matrix[0, 2])
+
+        # alpha = atan2(-r23, r33)
+        alpha = np.atan2(-rot_matrix[1, 2], rot_matrix[2, 2])
+        # gamma = atan2(-r12, r11)
+        gamma = np.atan2(-rot_matrix[0, 1], rot_matrix[0, 0])
+    else:
+        # Caso singular
+        alpha = 0.0
+        gamma = np.atan2(rot_matrix[1, 0], rot_matrix[1, 1])  # usando r21 e r22        
+        # beta pode ser +/- pi/2
+        beta = np.asin(rot_matrix[0, 2])
+    
+    return np.array([alpha,beta,gamma])
+
 def set_joints_position(joints_num:list[int],joints_params:list[float]):
     for joint, param in zip(joints_num,joints_params):
         sim.setJointPosition(joint, param)
@@ -169,17 +197,41 @@ def get_position_error(sim_matrix:np.ndarray,model_matrix:np.ndarray) -> np.ndar
     error_vector = error_vector [:3,3]
     return error_vector
  
+def get_orientation_error(sim_matrix:np.ndarray,model_matrix:np.ndarray) -> np.ndarray:
+    assert sim_matrix.shape == (4,4)
+    assert model_matrix.shape == (4,4)
+    sim_angles = tmatrix_to_angles(sim_matrix)
+    model_angles = tmatrix_to_angles(model_matrix)
+    orientation_error = np.abs(sim_angles-model_angles) 
+    return orientation_error
+
+
 def get_Tmatrix(target_handle,ref_handle:int):
     sim_T = sim.getObjectMatrix(target_handle,ref_handle)
     sim_T = np.reshape(sim_T,(3,4))
     sim_T = np.concatenate((sim_T,[[0,0,0,1]]),axis=0)
     return sim_T
 
+
+def validate_fk(joints_handles,target_handle,base_handle,num_iter=100):
+    position_error_list = []
+    orientation_error_list = []
+    np.random.seed(27)
+    for iter in range(num_iter):
+        joints_params = np.random.uniform(-1,1,6) * np.pi
+        set_joints_position(joints_handles,joints_params)
+        sim_T = get_Tmatrix(target_handle,base_handle)
+        model_T = ur5_forward_kinematics(joints_params)
+        position_error_vec = get_position_error(sim_T,model_T)
+        orientation_error_vec = get_orientation_error(sim_T,model_T)
+        position_error_list.append(np.linalg.norm(position_error_vec))
+        orientation_error_list.append(np.linalg.norm(orientation_error_vec))
+    return position_error_list, orientation_error_list
 client = RemoteAPIClient()
 sim = client.require("sim")
 
 def main_model():
-    joints_params = np.deg2rad([140, -40, 74.2, 20, 45, 40])
+    joints_params = np.deg2rad([140, -40, 78, 20, 45, 40])
     model_T = ur5_forward_kinematics(joints_params)
     print("Model Matrix")
     print(model_T.round(5))
@@ -206,8 +258,35 @@ def main():
     print(model_T.round(5))
     print("Simulation Matrix")
     print(sim_T.round(5))
+    sim_angles = tmatrix_to_angles(sim_T)
+    print(f"Simulation angles: {sim_angles}")
+    model_angles = tmatrix_to_angles(model_T)
+    print(f"Simulation angles: {model_angles}")
+    sim.stopSimulation()
+    position_error_list, orientation_error_list = validate_fk(joints_handles,target_handle,base_handle)
+    plt.figure(1)
+    sns.scatterplot(position_error_list)
+    plt.show()
+    plt.figure(2)
+    sns.scatterplot(orientation_error_list)
+    plt.show()
 
+def main_validation():
+    sim.setStepping(True)
+    sim.startSimulation()
+    base_handle = sim.getObject('/UR5/frame0')
+    target_handle = sim.getObject('/UR5/ROBOTIQ85/attachPoint')
+    joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
+    joints_handles = get_joints_handlers(joints_paths)
+    position_error_list, orientation_error_list = validate_fk(joints_handles,target_handle,base_handle)
+    plt.figure(1)
+    sns.lineplot(position_error_list)
+    plt.show()
+    plt.figure(2)
+    sns.lineplot(orientation_error_list)
+    plt.show()
     sim.stopSimulation()
 
+
 if __name__ == '__main__':
-    main()
+    main_validation()
