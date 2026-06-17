@@ -206,11 +206,17 @@ def get_orientation_error(sim_matrix:np.ndarray,model_matrix:np.ndarray) -> np.n
     return orientation_error
 
 
-def get_Tmatrix(target_handle,ref_handle:int):
+def get_Tmatrix(target_handle:int,ref_handle:int):
     sim_T = sim.getObjectMatrix(target_handle,ref_handle)
     sim_T = np.reshape(sim_T,(3,4))
     sim_T = np.concatenate((sim_T,[[0,0,0,1]]),axis=0)
     return sim_T
+
+
+def set_Tmatrix(desired_matrix,target_handle:int,ref_handle:int):
+    sim_matrix = desired_matrix[:3, :4].copy()
+    sim_matrix = sim_matrix.flatten().tolist()
+    sim.setObjectMatrix(target_handle, sim_matrix, ref_handle)
 
 
 def validate_fk(joints_handles:list[int],target_handle:int,base_handle:int,num_iter=200):
@@ -236,6 +242,17 @@ def validate_fk(joints_handles:list[int],target_handle:int,base_handle:int,num_i
         orientation_error_list.append(np.linalg.norm(orientation_error_vec))
     return position_error_list, orientation_error_list, joints_params_history
 
+def validate_ik(num_iter=200):
+    position_error_list = []
+    orientation_error_list = []
+    ref_params_history:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
+    found_params_history:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
+    np.random.seed(15)
+    for iter in range(num_iter):
+        ref_joints_params = np.random.uniform(-1,1,6) * np.pi
+        desired_T = ur5_forward_kinematics(ref_joints_params)
+        #TODO: Verificar as 8 possíveis configurações para o UR5.
+        found_joints_params = ur5_inverse_kinematics(desired_T)
 
 client = RemoteAPIClient()
 sim = client.require("sim")
@@ -299,8 +316,8 @@ def run_fk_validation():
     sns.lineplot(mean_orientation_error,label=f"Média: {np.mean(orientation_error_list):.5e}",color="red",ax=axes[1])
     axes[1].set(xlabel="Iteração", ylabel="Erro de orientação (rad)")
     plt.tight_layout()
+    fig.savefig("erro_fk.pdf", bbox_inches="tight")
     plt.show()
-    sim.stopSimulation()
     # Plotagem das variáveis das juntas.
     fig, axes = plt.subplots(6, 1, figsize=(16, 16), sharex=True)
     for ax, joint_name in zip(axes, [f"q{i}" for i in range(1, 7)]):
@@ -316,7 +333,10 @@ def run_fk_validation():
         ax.legend()
     axes[-1].set_xlabel("Iteração")
     plt.tight_layout()
+    fig.savefig("juntas_fk.pdf", bbox_inches="tight")
     plt.show()
+    sim.stopSimulation()
+
 
 
 if __name__ == '__main__':
