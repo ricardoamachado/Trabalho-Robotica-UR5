@@ -172,7 +172,7 @@ def tmatrix_to_angles(transform_matrix:np.ndarray):
     
     return np.array([alpha,beta,gamma])
 
-def set_joints_position(joints_num:list[int],joints_params:list[float]):
+def set_joints_position(joints_num:list[int],joints_params):
     for joint, param in zip(joints_num,joints_params):
         sim.setJointPosition(joint, param)
 
@@ -213,12 +213,20 @@ def get_Tmatrix(target_handle,ref_handle:int):
     return sim_T
 
 
-def validate_fk(joints_handles,target_handle,base_handle,num_iter=100):
+def validate_fk(joints_handles:list[int],target_handle:int,base_handle:int,num_iter=200):
     position_error_list = []
     orientation_error_list = []
-    np.random.seed(27)
+    joints_params_history:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
+    np.random.seed(15)
     for iter in range(num_iter):
         joints_params = np.random.uniform(-1,1,6) * np.pi
+        deg_params = np.rad2deg(joints_params)
+        joints_params_history["q1"].append(deg_params[0])
+        joints_params_history["q2"].append(deg_params[1])
+        joints_params_history["q3"].append(deg_params[2])
+        joints_params_history["q4"].append(deg_params[3])
+        joints_params_history["q5"].append(deg_params[4])
+        joints_params_history["q6"].append(deg_params[5])
         set_joints_position(joints_handles,joints_params)
         sim_T = get_Tmatrix(target_handle,base_handle)
         model_T = ur5_forward_kinematics(joints_params)
@@ -226,7 +234,9 @@ def validate_fk(joints_handles,target_handle,base_handle,num_iter=100):
         orientation_error_vec = get_orientation_error(sim_T,model_T)
         position_error_list.append(np.linalg.norm(position_error_vec))
         orientation_error_list.append(np.linalg.norm(orientation_error_vec))
-    return position_error_list, orientation_error_list
+    return position_error_list, orientation_error_list, joints_params_history
+
+
 client = RemoteAPIClient()
 sim = client.require("sim")
 
@@ -251,9 +261,15 @@ def main():
     joints_handles = get_joints_handlers(joints_paths)
     joints_params = [0,0,np.pi/2,np.pi/2,0,np.pi/6]
     joints_params = np.random.uniform(-1,1,6) * np.pi
+    print("Desired Joints Params.")
+    print(joints_params)
     set_joints_position(joints_handles,joints_params)
     sim_T = get_Tmatrix(target_handle,base_handle)
     model_T = ur5_forward_kinematics(joints_params)
+    sim_joints_params = get_joints_position(joints_handles)
+    print("Sim Joints Params.")
+    print(sim_joints_params)
+
     print("Model Matrix 2")
     print(model_T.round(5))
     print("Simulation Matrix")
@@ -263,30 +279,45 @@ def main():
     model_angles = tmatrix_to_angles(model_T)
     print(f"Simulation angles: {model_angles}")
     sim.stopSimulation()
-    position_error_list, orientation_error_list = validate_fk(joints_handles,target_handle,base_handle)
-    plt.figure(1)
-    sns.scatterplot(position_error_list)
-    plt.show()
-    plt.figure(2)
-    sns.scatterplot(orientation_error_list)
-    plt.show()
 
-def main_validation():
+def run_fk_validation():
     sim.setStepping(True)
     sim.startSimulation()
     base_handle = sim.getObject('/UR5/frame0')
     target_handle = sim.getObject('/UR5/ROBOTIQ85/attachPoint')
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
     joints_handles = get_joints_handlers(joints_paths)
-    position_error_list, orientation_error_list = validate_fk(joints_handles,target_handle,base_handle)
-    plt.figure(1)
-    sns.lineplot(position_error_list)
-    plt.show()
-    plt.figure(2)
-    sns.lineplot(orientation_error_list)
+    position_error_list, orientation_error_list, joints_params_history = validate_fk(joints_handles,target_handle,base_handle)
+    # Plotagem dos resultados.
+    fig, axes = plt.subplots(2,1,figsize=(13, 9))
+    mean_position_error = np.mean(position_error_list) * np.ones_like(position_error_list)
+    mean_orientation_error = np.mean(orientation_error_list) * np.ones_like(orientation_error_list)
+    sns.lineplot(position_error_list,label="Erro",color="black",ax=axes[0])
+    sns.lineplot(mean_position_error,label=f"Média: {np.mean(position_error_list):.6f}",color="red",ax=axes[0])
+    axes[0].set(xlabel="Iteração", ylabel="Erro de posição (m)",title="Histórico de Erro vs Iteração")
+    sns.lineplot(orientation_error_list,label="Erro",color="black",ax=axes[1])
+    sns.lineplot(mean_orientation_error,label=f"Média: {np.mean(orientation_error_list):.5e}",color="red",ax=axes[1])
+    axes[1].set(xlabel="Iteração", ylabel="Erro de orientação (rad)")
+    plt.tight_layout()
     plt.show()
     sim.stopSimulation()
+    # Plotagem das variáveis das juntas.
+    fig, axes = plt.subplots(6, 1, figsize=(16, 16), sharex=True)
+    for ax, joint_name in zip(axes, [f"q{i}" for i in range(1, 7)]):
+        sns.lineplot(
+            x=range(len(joints_params_history[joint_name])),
+            y=joints_params_history[joint_name],
+            label=joint_name,
+            ax=ax,
+            color="black"
+        )
+        ax.set_ylabel("Valor da junta (graus)")
+        ax.set_title(f"Histórico de {joint_name}")
+        ax.legend()
+    axes[-1].set_xlabel("Iteração")
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == '__main__':
-    main_validation()
+    run_fk_validation()
