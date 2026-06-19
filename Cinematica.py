@@ -144,7 +144,6 @@ def ur5_inverse_kinematics(desired_t_matrix:np.ndarray,shoulder="left",wrist="up
     t_4_to_3 = np.linalg.inv(t_3_to_1) @ t_4_to_1
     x_4_ref_3 = t_4_to_3 @ np.array([1,0,0,0])
     theta_4 = np.atan2(x_4_ref_3[1],x_4_ref_3[0])
-    print(f"Soma {np.rad2deg(theta_2+theta_3+theta_4)}")
     return [theta_1,theta_2, theta_3, theta_4, theta_5, theta_6]
 
 
@@ -242,17 +241,44 @@ def validate_fk(joints_handles:list[int],target_handle:int,base_handle:int,num_i
         orientation_error_list.append(np.linalg.norm(orientation_error_vec))
     return position_error_list, orientation_error_list, joints_params_history
 
-def validate_ik(num_iter=200):
-    position_error_list = []
-    orientation_error_list = []
-    ref_params_history:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
-    found_params_history:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
-    np.random.seed(15)
+def validate_ik_expressions(num_iter=100,tol=1e-6):
+    val_counter = 0
+    total_counter = 0
+    np.random.seed(27)
+    valid_params_history = np.zeros(num_iter)
     for iter in range(num_iter):
+        valid_params_per_iter = 0
         ref_joints_params = np.random.uniform(-1,1,6) * np.pi
         desired_T = ur5_forward_kinematics(ref_joints_params)
-        #TODO: Verificar as 8 possíveis configurações para o UR5.
-        found_joints_params = ur5_inverse_kinematics(desired_T)
+        # Itera sobre as 8 possíveis configurações do UR5.
+        ik_configurations = [
+            (shoulder, wrist, elbow)
+            for shoulder in ("left", "right")
+            for wrist in ("up", "down")
+            for elbow in ("up", "down")
+        ]
+        for shoulder, wrist, elbow in ik_configurations:
+            candidate_joints_params = ur5_inverse_kinematics(
+                desired_T,
+                shoulder=shoulder,
+                wrist=wrist,
+                elbow=elbow,
+            )
+            candidate_T = ur5_forward_kinematics(candidate_joints_params)
+            total_counter += 1
+            if np.any(np.isnan(candidate_joints_params)):
+                print(f"Não foi possível obter parâmetros válidos na iteração {iter}.")
+                print(f"Configuração atual:")
+                print(f"shoulder={shoulder}, wrist={wrist}, elbow={elbow}")
+            if np.all(np.abs((candidate_T @ np.linalg.inv(desired_T)) - np.eye(4)) <= tol):
+                val_counter += 1
+                valid_params_per_iter += 1
+        valid_params_history[iter] = valid_params_per_iter
+        if valid_params_per_iter == 0:
+            print("Não foi possível achar parâmetros válidos em nenhuma das 8 configurações possíveis para o UR5 que atendam a pose desejada.")
+    print(f"Parâmetros encontrados para {val_counter} poses.")
+    print(f"Número de total de poses avaliadas: {total_counter}")
+    return valid_params_history
 
 client = RemoteAPIClient()
 sim = client.require("sim")
@@ -297,6 +323,13 @@ def main():
     print(f"Simulation angles: {model_angles}")
     sim.stopSimulation()
 
+def run_ik_validation():
+    valid_params_history = validate_ik_expressions()
+    sns.scatterplot(valid_params_history)
+    plt.show()
+
+
+
 def run_fk_validation():
     sim.setStepping(True)
     sim.startSimulation()
@@ -318,26 +351,35 @@ def run_fk_validation():
     plt.tight_layout()
     fig.savefig("erro_fk.pdf", bbox_inches="tight")
     plt.show()
-    # Plotagem das variáveis das juntas.
+    plot_joint_histories(joints_params_history)
+    sim.stopSimulation()
+
+
+def plot_joint_histories(*histories, labels=None, title="Histórico das variáveis das juntas", filename="juntas_fk.pdf"):
+    joint_names = [f"q{i}" for i in range(1, 7)]
+    if len(histories) == 1 and isinstance(histories[0], dict):
+        histories = (histories[0],)
+    if labels is None:
+        labels = [f"Histórico {i + 1}" for i in range(len(histories))]
+
     fig, axes = plt.subplots(6, 1, figsize=(16, 16), sharex=True)
-    for ax, joint_name in zip(axes, [f"q{i}" for i in range(1, 7)]):
-        sns.lineplot(
-            x=range(len(joints_params_history[joint_name])),
-            y=joints_params_history[joint_name],
-            label=joint_name,
-            ax=ax,
-            color="black"
-        )
+    for ax, joint_name in zip(axes, joint_names):
+        for history, label in zip(histories, labels):
+            sns.lineplot(
+                x=range(len(history[joint_name])),
+                y=history[joint_name],
+                label=label,
+                ax=ax,
+            )
         ax.set_ylabel("Valor da junta (graus)")
-        ax.set_title(f"Histórico de {joint_name}")
+        ax.set_title(f"{title} - {joint_name}")
         ax.legend()
     axes[-1].set_xlabel("Iteração")
     plt.tight_layout()
-    fig.savefig("juntas_fk.pdf", bbox_inches="tight")
+    fig.savefig(filename, bbox_inches="tight")
     plt.show()
-    sim.stopSimulation()
 
 
 
 if __name__ == '__main__':
-    run_fk_validation()
+    run_ik_validation()
