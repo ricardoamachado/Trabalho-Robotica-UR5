@@ -3,6 +3,7 @@ import numpy as np
 from dataclasses import dataclass
 import seaborn as sns
 import matplotlib.pyplot as plt
+from time import sleep
 
 
 @dataclass
@@ -182,7 +183,7 @@ def get_joints_position(joints_handles:list[int]):
         joints_params.append(current_joint_position)
     return joints_params
 
-def get_joints_handlers(joints_paths:list[str]) -> list[int]:
+def get_joints_handles(joints_paths:list[str]) -> list[int]:
     joints_handlers:list[int] = []
     for path in joints_paths:
         current_handle = sim.getObject(path)
@@ -275,11 +276,61 @@ def validate_ik_expressions(num_iter=100,tol=1e-6):
                 valid_params_per_iter += 1
         valid_params_history[iter] = valid_params_per_iter
         if valid_params_per_iter == 0:
-            print("Não foi possível achar parâmetros válidos em nenhuma das 8 configurações possíveis para o UR5 que atendam a pose desejada.")
+            raise RuntimeError("Não foi possível achar parâmetros válidos em nenhuma das 8 configurações possíveis para o UR5 que atendam a pose desejada.")
     print(f"Parâmetros encontrados para {val_counter} poses.")
     print(f"Número de total de poses avaliadas: {total_counter}")
     return valid_params_history
 
+def run_ik_validation():
+    valid_params_history = validate_ik_expressions()
+    sns.scatterplot(valid_params_history)
+    plt.show()
+    objects_path = ['/laptop/','/cup1/','/cup2/','/bowl/']
+    base_handle = sim.getObject('/UR5/frame0')
+    # A função criada também pega os handles dos objetos no cenário.
+    objects_handle = get_joints_handles(objects_path)
+    joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
+    joints_handles = get_joints_handles(joints_paths)
+    start_joints_params = get_joints_position(joints_handles)
+    print(start_joints_params)
+    sim.setStepping(True)
+    sim.startSimulation()
+    ik_configurations = [
+            (shoulder, wrist, elbow)
+            for shoulder in ("left", "right")
+            for wrist in ("up", "down")
+            for elbow in ("up", "down")
+        ]
+    for object in objects_handle:
+        obj_matrix = get_Tmatrix(object,base_handle)
+        for shoulder, wrist, elbow in ik_configurations:
+            ik_joints_params = ur5_inverse_kinematics(
+                obj_matrix,
+                shoulder=shoulder,
+                wrist=wrist,
+                elbow=elbow,
+            )
+            # Encontra a primeira configuração válida para o UR5 e para o loop.
+            if not np.any(np.isnan(ik_joints_params)):
+                break
+            else:
+                print("Não foi possível encontrar parâmetros válidos.")
+        #TODO: Essa parte não funciona.
+        start_time = sim.getSimulationTime()
+        curr_time = start_time
+        set_joints_position(joints_handles,ik_joints_params)
+        while(curr_time - start_time) < 3:
+            sim.step()
+            curr_time = sim.getSimulationTime()
+        start_time = sim.getSimulationTime()
+        curr_time = start_time
+        set_joints_position(joints_handles,start_joints_params)
+        while(curr_time - start_time) < 100:         
+            sim.step()
+            curr_time = sim.getSimulationTime()
+    sim.stopSimulation()
+
+    
 client = RemoteAPIClient()
 sim = client.require("sim")
 
@@ -301,7 +352,7 @@ def main():
     base_handle = sim.getObject('/UR5/frame0')
     target_handle = sim.getObject('/UR5/ROBOTIQ85/attachPoint')
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
-    joints_handles = get_joints_handlers(joints_paths)
+    joints_handles = get_joints_handles(joints_paths)
     joints_params = [0,0,np.pi/2,np.pi/2,0,np.pi/6]
     joints_params = np.random.uniform(-1,1,6) * np.pi
     print("Desired Joints Params.")
@@ -323,12 +374,6 @@ def main():
     print(f"Simulation angles: {model_angles}")
     sim.stopSimulation()
 
-def run_ik_validation():
-    valid_params_history = validate_ik_expressions()
-    sns.scatterplot(valid_params_history)
-    plt.show()
-
-
 
 def run_fk_validation():
     sim.setStepping(True)
@@ -336,7 +381,7 @@ def run_fk_validation():
     base_handle = sim.getObject('/UR5/frame0')
     target_handle = sim.getObject('/UR5/ROBOTIQ85/attachPoint')
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
-    joints_handles = get_joints_handlers(joints_paths)
+    joints_handles = get_joints_handles(joints_paths)
     position_error_list, orientation_error_list, joints_params_history = validate_fk(joints_handles,target_handle,base_handle)
     # Plotagem dos resultados.
     fig, axes = plt.subplots(2,1,figsize=(13, 9))
