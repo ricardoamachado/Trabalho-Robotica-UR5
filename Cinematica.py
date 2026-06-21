@@ -5,7 +5,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from time import sleep
 
+client = RemoteAPIClient()
+sim = client.require("sim")
 
+# Criação de classe para representar parâmetros DH.
 @dataclass
 class DHModel:
     d:float
@@ -13,6 +16,7 @@ class DHModel:
     theta:float
     alpha:float
 
+# Classe com os parâmetros DH do UR5.
 @dataclass
 class UR5Params:
     d = (0.089159,0,0,0.10915,0.09465,0.0823 + 0.088)
@@ -172,6 +176,7 @@ def tmatrix_to_angles(transform_matrix:np.ndarray):
     
     return np.array([alpha,beta,gamma])
 
+# Funções auxiliares para trabalhar com o CoppeliaSim.
 def set_joints_position(joints_num:list[int],joints_params):
     for joint, param in zip(joints_num,joints_params):
         sim.setJointPosition(joint, param)
@@ -218,7 +223,30 @@ def set_Tmatrix(desired_matrix,target_handle:int,ref_handle:int):
     sim_matrix = sim_matrix.flatten().tolist()
     sim.setObjectMatrix(target_handle, sim_matrix, ref_handle)
 
-
+def change_grip_state(grip_path:str,state="open"):
+    assert state in ("open","close")
+    joint_1 = grip_path + "active1"
+    joint_2 = grip_path + "active2"
+    joint1_handle = sim.getObject(joint_1)
+    joint2_handle = sim.getObject(joint_2)
+    pos_1 = sim.getJointPosition(joint1_handle)
+    pos_2 = sim.getJointPosition(joint2_handle)
+    # Lógica utilizada no script do ROBOTIQ 85 do Coppelia.
+    if state == "close":
+        if (pos_1 < pos_2 - 0.008):
+            sim.setJointTargetVelocity(joint1_handle,-0.01)
+            sim.setJointTargetVelocity(joint2_handle,-0.04) 
+        else:
+            sim.setJointTargetVelocity(joint1_handle,-0.04)
+            sim.setJointTargetVelocity(joint2_handle,-0.04)             
+    if state == "open":
+        if (pos_1 < pos_2):
+            sim.setJointTargetVelocity(joint1_handle, 0.04)
+            sim.setJointTargetVelocity(joint2_handle, 0.02) 
+        else:
+            sim.setJointTargetVelocity(joint1_handle, 0.02)
+            sim.setJointTargetVelocity(joint2_handle, 0.04)         
+# Validação da cinemática direta.
 def validate_fk(joints_handles:list[int],target_handle:int,base_handle:int,num_iter=200):
     position_error_list = []
     orientation_error_list = []
@@ -269,7 +297,7 @@ def validate_ik_expressions(num_iter=100,tol=1e-6):
             total_counter += 1
             if np.any(np.isnan(candidate_joints_params)):
                 print(f"Não foi possível obter parâmetros válidos na iteração {iter}.")
-                print(f"Configuração atual:")
+                print("Configuração atual:")
                 print(f"shoulder={shoulder}, wrist={wrist}, elbow={elbow}")
             if np.all(np.abs((candidate_T @ np.linalg.inv(desired_T)) - np.eye(4)) <= tol):
                 val_counter += 1
@@ -281,6 +309,7 @@ def validate_ik_expressions(num_iter=100,tol=1e-6):
     print(f"Número de total de poses avaliadas: {total_counter}")
     return valid_params_history
 
+# Validação da cinemática inversa.
 def run_ik_validation():
     valid_params_history = validate_ik_expressions()
     sns.scatterplot(valid_params_history)
@@ -315,7 +344,6 @@ def run_ik_validation():
                 break
             else:
                 print("Não foi possível encontrar parâmetros válidos.")
-        #TODO: Essa parte não funciona.
         start_time = sim.getSimulationTime()
         curr_time = start_time
         set_joints_position(joints_handles,ik_joints_params)
@@ -324,41 +352,21 @@ def run_ik_validation():
             curr_time = sim.getSimulationTime()
         sim.stopSimulation()
 
-    
-client = RemoteAPIClient()
-sim = client.require("sim")
-
-def main_model():
-    joints_params = np.deg2rad([140, -40, 78, 20, 45, 40])
-    model_T = ur5_forward_kinematics(joints_params)
-    print("Model Matrix")
-    print(model_T.round(5))
-    desired_q_params = ur5_inverse_kinematics(model_T)
-    ik_model_T = ur5_forward_kinematics(desired_q_params)
-    print("Joints params values:")
-    print(np.rad2deg(desired_q_params))
-    print("Transformation Matrix with IK joints values.")
-    print(ik_model_T.round(5))
-
-def main():
+def example():
     sim.setStepping(True)
     sim.startSimulation()
     base_handle = sim.getObject('/UR5/frame0')
     target_handle = sim.getObject('/UR5/ROBOTIQ85/attachPoint')
+    grip_path = "/UR5/ROBOTIQ85/"
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
     joints_handles = get_joints_handles(joints_paths)
-    joints_params = [0,0,np.pi/2,np.pi/2,0,np.pi/6]
-    joints_params = np.random.uniform(-1,1,6) * np.pi
+    joints_params = [0,-np.pi/2,0,0,0,np.pi/2]
     print("Desired Joints Params.")
     print(joints_params)
     set_joints_position(joints_handles,joints_params)
     sim_T = get_Tmatrix(target_handle,base_handle)
     model_T = ur5_forward_kinematics(joints_params)
-    sim_joints_params = get_joints_position(joints_handles)
-    print("Sim Joints Params.")
-    print(sim_joints_params)
-
-    print("Model Matrix 2")
+    print("Model Matrix")
     print(model_T.round(5))
     print("Simulation Matrix")
     print(sim_T.round(5))
@@ -366,6 +374,13 @@ def main():
     print(f"Simulation angles: {sim_angles}")
     model_angles = tmatrix_to_angles(model_T)
     print(f"Simulation angles: {model_angles}")
+    while not sim.getSimulationStopping():
+        #Fecha e abre a cada 10 segundos a garra.
+        if (sim.getSimulationTime() // 10) % 2 == 0:
+            change_grip_state(grip_path,state="close")
+        else:
+            change_grip_state(grip_path,state="open")
+        sim.step()
     sim.stopSimulation()
 
 
@@ -421,4 +436,4 @@ def plot_joint_histories(*histories, labels=None, title="Histórico das variáve
 
 
 if __name__ == '__main__':
-    run_ik_validation()
+    example()
