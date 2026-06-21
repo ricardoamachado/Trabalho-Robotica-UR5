@@ -285,7 +285,7 @@ def run_ik_validation():
     valid_params_history = validate_ik_expressions()
     sns.scatterplot(valid_params_history)
     plt.show()
-    objects_path = ['/laptop/','/cup1/','/cup2/','/bowl/']
+    objects_path = ['/laptop1/','/laptop2/','/laptop3/']
     base_handle = sim.getObject('/UR5/frame0')
     # A função criada também pega os handles dos objetos no cenário.
     objects_handle = get_joints_handles(objects_path)
@@ -293,15 +293,15 @@ def run_ik_validation():
     joints_handles = get_joints_handles(joints_paths)
     start_joints_params = get_joints_position(joints_handles)
     print(start_joints_params)
-    sim.setStepping(True)
-    sim.startSimulation()
     ik_configurations = [
             (shoulder, wrist, elbow)
             for shoulder in ("left", "right")
-            for wrist in ("up", "down")
+            for wrist in ("down", "up")
             for elbow in ("up", "down")
         ]
     for object in objects_handle:
+        sim.setStepping(True)
+        sim.startSimulation()
         obj_matrix = get_Tmatrix(object,base_handle)
         for shoulder, wrist, elbow in ik_configurations:
             ik_joints_params = ur5_inverse_kinematics(
@@ -319,16 +319,10 @@ def run_ik_validation():
         start_time = sim.getSimulationTime()
         curr_time = start_time
         set_joints_position(joints_handles,ik_joints_params)
-        while(curr_time - start_time) < 3:
+        while(curr_time - start_time) < 2:
             sim.step()
             curr_time = sim.getSimulationTime()
-        start_time = sim.getSimulationTime()
-        curr_time = start_time
-        set_joints_position(joints_handles,start_joints_params)
-        while(curr_time - start_time) < 100:         
-            sim.step()
-            curr_time = sim.getSimulationTime()
-    sim.stopSimulation()
+        sim.stopSimulation()
 
     
 client = RemoteAPIClient()
