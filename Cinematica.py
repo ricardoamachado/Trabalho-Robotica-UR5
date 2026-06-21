@@ -77,6 +77,19 @@ def ur5_forward_kinematics(joints_params) -> np.ndarray:
 
     return model_T
 
+def limit_angles(angles) -> np.ndarray:
+    angles = np.array(angles)
+    """
+    Limita um array de ângulos em radianos para o intervalo [-π, π].
+    
+    A lógica preserva o sinal do ângulo:
+    - Ângulos positivos ficam no intervalo [0, π]
+    - Ângulos negativos ficam no intervalo [-π, 0]
+    """
+    angulos_limitados = np.atan2(np.sin(angles), np.cos(angles))
+    
+    return angulos_limitados
+
 def ur5_inverse_kinematics(desired_t_matrix:np.ndarray,shoulder="left",wrist="up",elbow="up"):
     assert desired_t_matrix.shape == (4,4)
     # Notação p_i_ref_j.
@@ -149,7 +162,7 @@ def ur5_inverse_kinematics(desired_t_matrix:np.ndarray,shoulder="left",wrist="up
     t_4_to_3 = np.linalg.inv(t_3_to_1) @ t_4_to_1
     x_4_ref_3 = t_4_to_3 @ np.array([1,0,0,0])
     theta_4 = np.atan2(x_4_ref_3[1],x_4_ref_3[0])
-    return [theta_1,theta_2, theta_3, theta_4, theta_5, theta_6]
+    return limit_angles([theta_1,theta_2, theta_3, theta_4, theta_5, theta_6])
 
 
 def tmatrix_to_angles(transform_matrix:np.ndarray):
@@ -245,7 +258,8 @@ def change_grip_state(grip_path:str,state="open"):
             sim.setJointTargetVelocity(joint2_handle, 0.02) 
         else:
             sim.setJointTargetVelocity(joint1_handle, 0.02)
-            sim.setJointTargetVelocity(joint2_handle, 0.04)         
+            sim.setJointTargetVelocity(joint2_handle, 0.04)
+
 # Validação da cinemática direta.
 def validate_fk(joints_handles:list[int],target_handle:int,base_handle:int,num_iter=200):
     position_error_list = []
@@ -273,6 +287,8 @@ def validate_fk(joints_handles:list[int],target_handle:int,base_handle:int,num_i
 def validate_ik_expressions(num_iter=100,tol=1e-6):
     val_counter = 0
     total_counter = 0
+    ref_params_history:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
+    best_params_found_history:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
     np.random.seed(27)
     valid_params_history = np.zeros(num_iter)
     for iter in range(num_iter):
@@ -286,6 +302,7 @@ def validate_ik_expressions(num_iter=100,tol=1e-6):
             for wrist in ("up", "down")
             for elbow in ("up", "down")
         ]
+        best_error_norm = np.inf
         for shoulder, wrist, elbow in ik_configurations:
             candidate_joints_params = ur5_inverse_kinematics(
                 desired_T,
@@ -300,20 +317,40 @@ def validate_ik_expressions(num_iter=100,tol=1e-6):
                 print("Configuração atual:")
                 print(f"shoulder={shoulder}, wrist={wrist}, elbow={elbow}")
             if np.all(np.abs((candidate_T @ np.linalg.inv(desired_T)) - np.eye(4)) <= tol):
+                error_params = np.abs(ref_joints_params - candidate_joints_params)
+                if np.linalg.norm(error_params) < best_error_norm:
+                    # Encontra a solução da cinemática inversa que está mais próxima aos parâmetros definidos para as juntas.
+                    best_error_norm =  np.linalg.norm(error_params)
+                    best_joints_params = candidate_joints_params
                 val_counter += 1
                 valid_params_per_iter += 1
         valid_params_history[iter] = valid_params_per_iter
         if valid_params_per_iter == 0:
             raise RuntimeError("Não foi possível achar parâmetros válidos em nenhuma das 8 configurações possíveis para o UR5 que atendam a pose desejada.")
+        ref_joints_params = np.rad2deg(ref_joints_params)
+        ref_params_history["q1"].append(ref_joints_params[0])
+        ref_params_history["q2"].append(ref_joints_params[1])
+        ref_params_history["q3"].append(ref_joints_params[2])
+        ref_params_history["q4"].append(ref_joints_params[3])
+        ref_params_history["q5"].append(ref_joints_params[4])
+        ref_params_history["q6"].append(ref_joints_params[5])
+        best_joints_params = np.rad2deg(best_joints_params)
+        best_params_found_history["q1"].append(best_joints_params[0])
+        best_params_found_history["q2"].append(best_joints_params[1])
+        best_params_found_history["q3"].append(best_joints_params[2])
+        best_params_found_history["q4"].append(best_joints_params[3])
+        best_params_found_history["q5"].append(best_joints_params[4])
+        best_params_found_history["q6"].append(best_joints_params[5])
     print(f"Parâmetros encontrados para {val_counter} poses.")
     print(f"Número de total de poses avaliadas: {total_counter}")
-    return valid_params_history
+    return valid_params_history, best_params_found_history, ref_params_history
 
 # Validação da cinemática inversa.
 def run_ik_validation():
-    valid_params_history = validate_ik_expressions()
+    valid_params_history, best_params_history, ref_params_history = validate_ik_expressions()
     sns.scatterplot(valid_params_history)
     plt.show()
+    plot_joint_histories(best_params_history, ref_params_history,labels=("Parâmetro encontrado","Parâmetro definido"))
     objects_path = ['/laptop1/','/laptop2/','/laptop3/']
     base_handle = sim.getObject('/UR5/frame0')
     # A função criada também pega os handles dos objetos no cenário.
@@ -341,9 +378,7 @@ def run_ik_validation():
             )
             # Encontra a primeira configuração válida para o UR5 e para o loop.
             if not np.any(np.isnan(ik_joints_params)):
-                break
-            else:
-                print("Não foi possível encontrar parâmetros válidos.")
+                break 
         start_time = sim.getSimulationTime()
         curr_time = start_time
         set_joints_position(joints_handles,ik_joints_params)
@@ -418,11 +453,13 @@ def plot_joint_histories(*histories, labels=None, title="Histórico das variáve
 
     fig, axes = plt.subplots(6, 1, figsize=(16, 16), sharex=True)
     for ax, joint_name in zip(axes, joint_names):
-        for history, label in zip(histories, labels):
+        for idx, (history, label) in enumerate(zip(histories, labels), start=1):
             sns.lineplot(
                 x=range(len(history[joint_name])),
                 y=history[joint_name],
                 label=label,
+                color="red" if idx % 2 == 1 else "black",
+                linestyle="-" if idx % 2 == 1 else ":",
                 ax=ax,
             )
         ax.set_ylabel("Valor da junta (graus)")
@@ -436,4 +473,4 @@ def plot_joint_histories(*histories, labels=None, title="Histórico das variáve
 
 
 if __name__ == '__main__':
-    example()
+    run_ik_validation()
