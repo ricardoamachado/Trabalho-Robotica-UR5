@@ -283,7 +283,7 @@ def validate_fk(joints_handles:list[int],target_handle:int,base_handle:int,num_i
         orientation_error_list.append(np.linalg.norm(orientation_error_vec))
     return position_error_list, orientation_error_list, joints_params_history
 
-def validate_ik_expressions(num_iter=100,tol=1e-6):
+def validate_ik_expressions(num_iter=200,tol=1e-6):
     val_counter = 0
     total_counter = 0
     ref_params_history:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
@@ -357,7 +357,7 @@ def run_ik_validation(simulate=False):
     plt.grid()
     plt.savefig("configs_validas.pdf")
     plt.show()
-    plot_joint_histories(best_params_history, ref_params_history,labels=("Parâmetro encontrado","Parâmetro definido"),filename="juntas_ik.pdf")
+    plot_joint_histories(best_params_history, ref_params_history,labels=("Ângulo encontrado","Ângulo definido"),filename="juntas_ik.pdf")
     objects_path = ['/laptop1/','/laptop2/','/laptop3/']
     print(f"Erro médio na cinemática inversa {np.mean(error_history):.5e} +- {np.std(error_history,ddof=1):.5e}")
     if simulate: 
@@ -456,7 +456,7 @@ def run_fk_validation():
     plt.tight_layout()
     fig.savefig("erro_fk.pdf", bbox_inches="tight")
     plt.show()
-    plot_joint_histories(joints_params_history)
+    plot_joint_histories(joints_params_history,filename="juntas_fk.pdf")
     sim.stopSimulation()
 
 
@@ -467,14 +467,14 @@ def plot_joint_histories(*histories, labels=None, title="Histórico das variáve
     if labels is None:
         labels = [f"Histórico {i + 1}" for i in range(len(histories))]
 
-    fig, axes = plt.subplots(6, 1, figsize=(16, 16), sharex=True)
-    for ax, joint_name in zip(axes, joint_names):
+    fig, axes = plt.subplots(3, 1, figsize=(16, 10), sharex=True)
+    for ax, joint_name in zip(axes, joint_names[:3]):
         for idx, (history, label) in enumerate(zip(histories, labels), start=1):
             sns.lineplot(
                 x=range(len(history[joint_name])),
                 y=history[joint_name],
                 label=label,
-                color="blue" if idx % 2 == 1 else "black",
+                color="blue" if idx % 2 == 1 else "red",
                 linestyle="-" if idx % 2 == 1 else ":",
                 ax=ax,
             )
@@ -483,10 +483,40 @@ def plot_joint_histories(*histories, labels=None, title="Histórico das variáve
         ax.legend()
     axes[-1].set_xlabel("Iteração")
     plt.tight_layout()
-    fig.savefig(filename, bbox_inches="tight")
+    fig.savefig(filename.replace(".pdf", "_1_3.pdf"), bbox_inches="tight")
+
+    fig, axes = plt.subplots(3, 1, figsize=(16, 10), sharex=True)
+    for ax, joint_name in zip(axes, joint_names[3:]):
+        for idx, (history, label) in enumerate(zip(histories, labels), start=1):
+            sns.lineplot(
+                x=range(len(history[joint_name])),
+                y=history[joint_name],
+                label=label,
+                color="blue" if idx % 2 == 1 else "red",
+                linestyle="-" if idx % 2 == 1 else ":",
+                ax=ax,
+            )
+        ax.set_ylabel("Valor da junta (°)")
+        ax.set_title(f"{title} - {joint_name}")
+        ax.legend()
+    axes[-1].set_xlabel("Iteração")
+    plt.tight_layout()
+    fig.savefig(filename.replace(".pdf", "_4_6.pdf"), bbox_inches="tight")
     plt.show()
 
-
+def main():
+    while True:
+        print("1 - Validação da cinemática direta.")
+        print("2 - Validação da cinemática inversa.")
+        entrada = input("Digite o número da validação desejada.\n")
+        while entrada not in ("1","2"):
+            entrada = input("Digite um valor válido.\n")
+        if entrada == "1":
+            run_fk_validation()
+            break
+        if entrada == "2":
+            run_ik_validation()
+            break
 
 if __name__ == '__main__':
-    run_ik_validation()
+    main()
