@@ -3,7 +3,6 @@ import numpy as np
 from dataclasses import dataclass
 import seaborn as sns
 import matplotlib.pyplot as plt
-from time import sleep
 
 client = RemoteAPIClient()
 sim = client.require("sim")
@@ -289,6 +288,7 @@ def validate_ik_expressions(num_iter=100,tol=1e-6):
     total_counter = 0
     ref_params_history:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
     best_params_found_history:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
+    error_history = []
     np.random.seed(27)
     valid_params_history = np.zeros(num_iter)
     for iter in range(num_iter):
@@ -341,17 +341,29 @@ def validate_ik_expressions(num_iter=100,tol=1e-6):
         best_params_found_history["q4"].append(best_joints_params[3])
         best_params_found_history["q5"].append(best_joints_params[4])
         best_params_found_history["q6"].append(best_joints_params[5])
+        error_history.append(best_error_norm)
     print(f"Parâmetros encontrados para {val_counter} poses.")
     print(f"Número de total de poses avaliadas: {total_counter}")
-    return valid_params_history, best_params_found_history, ref_params_history
+    return valid_params_history, best_params_found_history, ref_params_history, error_history
 
 # Validação da cinemática inversa.
-def run_ik_validation():
-    valid_params_history, best_params_history, ref_params_history = validate_ik_expressions()
-    sns.scatterplot(valid_params_history)
+def run_ik_validation(simulate=False):
+    valid_params_history, best_params_history, ref_params_history, error_history = validate_ik_expressions()
+    plt.figure(figsize=(9, 6))
+    sns.scatterplot(valid_params_history,color="blue")
+    plt.xlabel("Iteração")
+    plt.ylabel("Número de configurações válidas")
+    plt.title("Número de configurações válidas encontradas para o UR5 vs Iteração.")
+    plt.grid()
+    plt.savefig("configs_validas.pdf")
     plt.show()
-    plot_joint_histories(best_params_history, ref_params_history,labels=("Parâmetro encontrado","Parâmetro definido"))
+    plot_joint_histories(best_params_history, ref_params_history,labels=("Parâmetro encontrado","Parâmetro definido"),filename="juntas_ik.pdf")
     objects_path = ['/laptop1/','/laptop2/','/laptop3/']
+    print(f"Erro médio na cinemática inversa {np.mean(error_history):.5e} +- {np.std(error_history,ddof=1):.5e}")
+    if simulate: 
+        run_ik_simulation(objects_path)
+
+def run_ik_simulation(objects_path):
     base_handle = sim.getObject('/UR5/frame0')
     # A função criada também pega os handles dos objetos no cenário.
     objects_handle = get_joints_handles(objects_path)
@@ -431,8 +443,12 @@ def run_fk_validation():
     fig, axes = plt.subplots(2,1,figsize=(13, 9))
     mean_position_error = np.mean(position_error_list) * np.ones_like(position_error_list)
     mean_orientation_error = np.mean(orientation_error_list) * np.ones_like(orientation_error_list)
+    std_dev_position = np.std(position_error_list,ddof=1)
+    std_dev_orientation = np.std(orientation_error_list,ddof=1)
+    print(f"Erro de posição: {100 * mean_position_error[0]:.5f} +- {100 * std_dev_position:.5f} cm")
+    print(f"Erro de orientação: {mean_orientation_error[0]:.5e} +- {std_dev_orientation:.5e} rad")
     sns.lineplot(position_error_list,label="Erro",color="black",ax=axes[0])
-    sns.lineplot(mean_position_error,label=f"Média: {np.mean(position_error_list):.6f}",color="red",ax=axes[0])
+    sns.lineplot(mean_position_error,label=f"Média: {np.mean(position_error_list):.5f}",color="red",ax=axes[0])
     axes[0].set(xlabel="Iteração", ylabel="Erro de posição (m)",title="Histórico de Erro vs Iteração")
     sns.lineplot(orientation_error_list,label="Erro",color="black",ax=axes[1])
     sns.lineplot(mean_orientation_error,label=f"Média: {np.mean(orientation_error_list):.5e}",color="red",ax=axes[1])
@@ -444,7 +460,7 @@ def run_fk_validation():
     sim.stopSimulation()
 
 
-def plot_joint_histories(*histories, labels=None, title="Histórico das variáveis das juntas", filename="juntas_fk.pdf"):
+def plot_joint_histories(*histories, labels=None, title="Histórico das variáveis das juntas", filename="juntas.pdf"):
     joint_names = [f"q{i}" for i in range(1, 7)]
     if len(histories) == 1 and isinstance(histories[0], dict):
         histories = (histories[0],)
@@ -458,11 +474,11 @@ def plot_joint_histories(*histories, labels=None, title="Histórico das variáve
                 x=range(len(history[joint_name])),
                 y=history[joint_name],
                 label=label,
-                color="red" if idx % 2 == 1 else "black",
+                color="blue" if idx % 2 == 1 else "black",
                 linestyle="-" if idx % 2 == 1 else ":",
                 ax=ax,
             )
-        ax.set_ylabel("Valor da junta (graus)")
+        ax.set_ylabel("Valor da junta (°)")
         ax.set_title(f"{title} - {joint_name}")
         ax.legend()
     axes[-1].set_xlabel("Iteração")
