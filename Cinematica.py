@@ -193,6 +193,11 @@ def set_joints_position(joints_num:list[int],joints_params):
     for joint, param in zip(joints_num,joints_params):
         sim.setJointPosition(joint, param)
 
+# Por algum motivo a função setJointPosition não simula a dinâmica do robô.
+def set_joints_position_dynamics(joints_num:list[int],joints_params):
+    for joint, param in zip(joints_num,joints_params):
+        sim.setJointTargetPosition(joint, param)
+
 def get_joints_position(joints_handles:list[int]):
     joints_params:list[float] = []
     for joint in joints_handles:
