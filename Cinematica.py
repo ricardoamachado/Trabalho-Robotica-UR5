@@ -115,7 +115,6 @@ def ur5_inverse_kinematics(desired_t_matrix:np.ndarray,shoulder="left",wrist="up
     # Inverte a matriz T de 6 para 0.
     x_0_ref_6 = np.linalg.inv(desired_t_matrix) @ np.array([1,0,0,0]).T
     y_0_ref_6 = np.linalg.inv(desired_t_matrix) @ np.array([0,1,0,0]).T
-    #TODO: Verificar o que fazer caso sin(theta_5) = 0.
     theta_6 = np.atan2(
         (-x_0_ref_6[1] * np.sin(theta_1) + y_0_ref_6[1] * np.cos(theta_1))/np.sin(theta_5),
         (x_0_ref_6[0] * np.sin(theta_1) - y_0_ref_6[0] * np.cos(theta_1))/np.sin(theta_5)
@@ -352,7 +351,7 @@ def validate_ik_expressions(num_iter=200,tol=1e-6):
     return valid_params_history, best_params_found_history, ref_params_history, error_history
 
 # Validação da cinemática inversa.
-def run_ik_validation(simulate=False):
+def run_ik_validation(simulate=True):
     valid_params_history, best_params_history, ref_params_history, error_history = validate_ik_expressions()
     plt.figure(figsize=(12, 8))
     sns.scatterplot(valid_params_history,color="blue")
@@ -382,9 +381,8 @@ def run_ik_simulation(objects_path):
             for wrist in ("down", "up")
             for elbow in ("up", "down")
         ]
+    found_joints_params = []
     for object in objects_handle:
-        sim.setStepping(True)
-        sim.startSimulation()
         obj_matrix = get_Tmatrix(object,base_handle)
         for shoulder, wrist, elbow in ik_configurations:
             ik_joints_params = ur5_inverse_kinematics(
@@ -395,7 +393,11 @@ def run_ik_simulation(objects_path):
             )
             # Encontra a primeira configuração válida para o UR5 e para o loop.
             if not np.any(np.isnan(ik_joints_params)):
+                found_joints_params.append(ik_joints_params)
                 break 
+    for found_param in found_joints_params:
+        sim.startSimulation()
+        sim.setStepping()
         start_time = sim.getSimulationTime()
         curr_time = start_time
         set_joints_position(joints_handles,ik_joints_params)

@@ -1,8 +1,6 @@
 from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import numpy as np
-import seaborn as sns
-import matplotlib.pyplot as plt
-from Cinematica import ur5_inverse_kinematics, get_joints_position, get_joints_handles, change_grip_state, get_Tmatrix, set_joints_position_dynamics, plot_joint_histories
+from Cinematica import ur5_inverse_kinematics, get_joints_position, get_joints_handles, change_grip_state, set_joints_position_dynamics, plot_joint_histories
 
 client = RemoteAPIClient()
 sim = client.require("sim")
@@ -101,7 +99,7 @@ def move_to_joints_position(joints_handles,desired_position,delta_time,grip_stat
         sim.step()
         if np.linalg.norm(current_joints_posision - desired_position) < tol:
             break
-
+# Move o robô para uma pose determinada por uma matriz de transformação.
 def move_to_pose(joints_handles,desired_matrix,delta_time,initial_velocity=0,final_velocity=0,initial_accel=0,final_accel=0,tol=1e-4):
     joints_initial_position = get_joints_position(joints_handles)
     # Itera sobre as 8 possíveis configurações do UR5.
@@ -135,23 +133,6 @@ def move_to_pose(joints_handles,desired_matrix,delta_time,initial_velocity=0,fin
         if np.linalg.norm(current_joints_posision - smallest_delta_position) < tol:
             break
 
-def run_simulation():
-    base_handle = sim.getObject('/UR5/frame0')
-    # A função criada também pega os handles dos objetos no cenário.
-    objects_path = ['/projector/']
-    objects_handle = get_joints_handles(objects_path)
-    joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
-    joints_handles = get_joints_handles(joints_paths)
-    start_joints_params = get_joints_position(joints_handles)
-    print(start_joints_params)
-    sim.setStepping(True)
-    sim.startSimulation()
-    for object in objects_handle:
-        obj_matrix = get_Tmatrix(object,base_handle)
-        delta_time = 10
-        move_to_pose(joints_handles,obj_matrix,delta_time)
-        move_to_joints_position(joints_handles,np.zeros(6),delta_time)
-
 def main():
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
     joints_handles = get_joints_handles(joints_paths)
@@ -178,27 +159,6 @@ def main():
     move_to_joints_position(joints_handles,position_8,delta_time,'open')
     move_to_joints_position(joints_handles,position_9,delta_time,'open')
     plot_joint_histories(global_joints_position_hist,title="Histórico de posições na trajetória.",filename='juntas_teste.pdf')
-def example_plot():
-    initial_position = 0
-    initial_velocity = 0
-    final_velocity = 0
-    final_position = 20
-    initial_accel = 0
-    final_accel = 0
-    cubic_coefs = cubic_path_coefs(initial_position,initial_velocity,final_position,final_velocity)
-    quintic_coefs = quintic_path_coefs(initial_position,initial_velocity,initial_accel,final_position,final_velocity,final_accel)
-    t = np.linspace(0,1,100)
-    cubic_position_eq = cubic_coefs[0] + cubic_coefs[1] * t + cubic_coefs[2] * t**2 + cubic_coefs[3] * t**3
-    cubic_velocity_eq = cubic_coefs[1] + 2 * cubic_coefs[2] * t + 3 * cubic_coefs[3] * t**2
-    quintic_position_eq = quintic_coefs[0] + quintic_coefs[1] * t + quintic_coefs[2] * t**2 + quintic_coefs[3] * t**3 + quintic_coefs[4] * t**4 + quintic_coefs[5] * t**5
-    quintic_velocity_eq = quintic_coefs[1] * t + 2 * quintic_coefs[2] + 3 * quintic_coefs[3] * t**2 + 4 * quintic_coefs[4] * t**3 + 5 * quintic_coefs[5] * t**4
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    sns.lineplot(x=t,y=cubic_position_eq,ax=axes[0])
-    sns.lineplot(x=t,y=cubic_velocity_eq,ax=axes[1])
-    plt.show()
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5))
-    sns.lineplot(x=t,y=quintic_position_eq,ax=axes[0])
-    sns.lineplot(x=t,y=quintic_velocity_eq,ax=axes[1])
-    plt.show()
+
 if __name__ == '__main__':
     main()
