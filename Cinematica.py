@@ -406,38 +406,6 @@ def run_ik_simulation(objects_path):
             curr_time = sim.getSimulationTime()
         sim.stopSimulation()
 
-def example():
-    sim.setStepping(True)
-    sim.startSimulation()
-    base_handle = sim.getObject('/UR5/frame0')
-    target_handle = sim.getObject('/UR5/ROBOTIQ85/attachPoint')
-    grip_path = "/UR5/ROBOTIQ85/"
-    joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
-    joints_handles = get_joints_handles(joints_paths)
-    joints_params = [0,-np.pi/2,0,0,0,np.pi/2]
-    print("Desired Joints Params.")
-    print(joints_params)
-    set_joints_position(joints_handles,joints_params)
-    sim_T = get_Tmatrix(target_handle,base_handle)
-    model_T = ur5_forward_kinematics(joints_params)
-    print("Model Matrix")
-    print(model_T.round(5))
-    print("Simulation Matrix")
-    print(sim_T.round(5))
-    sim_angles = tmatrix_to_angles(sim_T)
-    print(f"Simulation angles: {sim_angles}")
-    model_angles = tmatrix_to_angles(model_T)
-    print(f"Simulation angles: {model_angles}")
-    while not sim.getSimulationStopping():
-        #Fecha e abre a cada 10 segundos a garra.
-        if (sim.getSimulationTime() // 10) % 2 == 0:
-            change_grip_state(grip_path,state="close")
-        else:
-            change_grip_state(grip_path,state="open")
-        sim.step()
-    sim.stopSimulation()
-
-
 def run_fk_validation():
     sim.setStepping(True)
     sim.startSimulation()

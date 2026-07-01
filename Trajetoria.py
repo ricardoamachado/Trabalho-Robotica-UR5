@@ -6,18 +6,6 @@ client = RemoteAPIClient()
 sim = client.require("sim")
 global_joints_position_hist:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
 
-def cubic_path_coefs(initial_position,initial_velocity,final_position,final_velocity,initial_time=0,final_time=1):
-    matrix = np.array(
-    [
-        [1, initial_time, initial_time**2, initial_time**3],
-        [0, 1, 2 * initial_time, 3 * initial_time**2],
-        [1, final_time, final_time**2, final_time**3],
-        [0, 1, 2 * final_time, 3 * final_time**2],
-    ]
-    )
-    cubic_coefs = np.linalg.inv(matrix) @ np.array([initial_position,initial_velocity,final_position,final_velocity])
-    return cubic_coefs
-
 def quintic_path_coefs(initial_position,initial_velocity,initial_accel,final_position,final_velocity,final_accel,initial_time=0,final_time=1):
     matrix = np.array(
     [
