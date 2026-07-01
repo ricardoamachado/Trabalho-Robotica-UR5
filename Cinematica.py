@@ -354,7 +354,7 @@ def validate_ik_expressions(num_iter=200,tol=1e-6):
 # Validação da cinemática inversa.
 def run_ik_validation(simulate=False):
     valid_params_history, best_params_history, ref_params_history, error_history = validate_ik_expressions()
-    plt.figure(figsize=(9, 6))
+    plt.figure(figsize=(12, 8))
     sns.scatterplot(valid_params_history,color="blue")
     plt.xlabel("Iteração")
     plt.ylabel("Número de configurações válidas")

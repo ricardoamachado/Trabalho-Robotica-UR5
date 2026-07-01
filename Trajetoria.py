@@ -77,11 +77,14 @@ def quintic_joints_position_at_time(
 
     return joints_position
 
-def move_to_joints_position(joints_handles,desired_position,delta_time,initial_velocity=0,final_velocity=0,initial_accel=0,final_accel=0,tol=1e-4):
+def move_to_joints_position(joints_handles,desired_position,delta_time,grip_state='open',initial_velocity=0,final_velocity=0,initial_accel=0,final_accel=0,tol=1e-4):
+    grip_path = "/UR5/ROBOTIQ85/"
     joints_initial_position = get_joints_position(joints_handles)
     initial_time = sim.getSimulationTime()
     final_time = initial_time + delta_time
     while not sim.getSimulationStopping():
+        if grip_state == 'close':
+            change_grip_state(grip_path,state="close")
         current_time = sim.getSimulationTime()
         current_joints_posision = quintic_joints_position_at_time(joints_initial_position,desired_position,current_time,initial_time,final_time)
         set_joints_position_dynamics(joints_handles,current_joints_posision)
@@ -122,19 +125,37 @@ def move_to_pose(joints_handles,desired_matrix,delta_time,initial_velocity=0,fin
         if np.linalg.norm(current_joints_posision - smallest_delta_position) < tol:
             break
 
+def run_simulation():
+    base_handle = sim.getObject('/UR5/frame0')
+    # A função criada também pega os handles dos objetos no cenário.
+    objects_path = ['/projector/']
+    objects_handle = get_joints_handles(objects_path)
+    joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
+    joints_handles = get_joints_handles(joints_paths)
+    start_joints_params = get_joints_position(joints_handles)
+    print(start_joints_params)
+    sim.setStepping(True)
+    sim.startSimulation()
+    for object in objects_handle:
+        obj_matrix = get_Tmatrix(object,base_handle)
+        delta_time = 10
+        move_to_pose(joints_handles,obj_matrix,delta_time)
+        move_to_joints_position(joints_handles,np.zeros(6),delta_time)
 
 def main():
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
     joints_handles = get_joints_handles(joints_paths)
-    object_handle = sim.getObject('/projector')
-    base_handle = sim.getObject('/UR5/frame0')
-    desired_matrix = get_Tmatrix(object_handle,base_handle)
-    delta_time = 20
-    initial_position = np.array([0,-np.pi/2,0,np.pi/2,0,0])
+    delta_time = 15
+    position_1 = np.deg2rad(np.array([30,15,0,0,0,0]))
+    position_2 = np.deg2rad(np.array([90,60,-50,0,0,0]))
+
     sim.setStepping(True)
     sim.startSimulation()
-    move_to_joints_position(joints_handles,initial_position,delta_time)
-    move_to_pose(joints_handles,desired_matrix,delta_time)
+    move_to_joints_position(joints_handles,position_1,delta_time)
+    start_time = sim.getSimulationTime()
+    print("Fim do loop.")
+    move_to_joints_position(joints_handles,position_2,delta_time,'close')
+
 
 def example_plot():
     initial_position = 0
