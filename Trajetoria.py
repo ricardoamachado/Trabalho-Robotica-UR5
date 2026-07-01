@@ -2,10 +2,11 @@ from coppeliasim_zmqremoteapi_client import RemoteAPIClient
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-from Cinematica import ur5_inverse_kinematics, set_joints_position, get_joints_position, get_joints_handles, change_grip_state, get_Tmatrix, set_joints_position_dynamics
+from Cinematica import ur5_inverse_kinematics, get_joints_position, get_joints_handles, change_grip_state, get_Tmatrix, set_joints_position_dynamics, plot_joint_histories
 
 client = RemoteAPIClient()
 sim = client.require("sim")
+global_joints_position_hist:dict = {"q1": [], "q2": [], "q3": [], "q4": [], "q5": [], "q6": []}
 
 def cubic_path_coefs(initial_position,initial_velocity,final_position,final_velocity,initial_time=0,final_time=1):
     matrix = np.array(
@@ -88,6 +89,15 @@ def move_to_joints_position(joints_handles,desired_position,delta_time,grip_stat
         current_time = sim.getSimulationTime()
         current_joints_posision = quintic_joints_position_at_time(joints_initial_position,desired_position,current_time,initial_time,final_time)
         set_joints_position_dynamics(joints_handles,current_joints_posision)
+        # Pega a posição da junta no simulador para plotagem futura.
+        sim_joints_position = get_joints_position(joints_handles)
+        sim_joints_position = np.rad2deg(sim_joints_position)
+        global_joints_position_hist["q1"].append(sim_joints_position[0])
+        global_joints_position_hist["q2"].append(sim_joints_position[1])
+        global_joints_position_hist["q3"].append(sim_joints_position[2])
+        global_joints_position_hist["q4"].append(sim_joints_position[3])
+        global_joints_position_hist["q5"].append(sim_joints_position[4])
+        global_joints_position_hist["q6"].append(sim_joints_position[5])
         sim.step()
         if np.linalg.norm(current_joints_posision - desired_position) < tol:
             break
@@ -146,17 +156,28 @@ def main():
     joints_paths: list[str] = [f"/UR5/joint{i}" for i in range(1,7)]
     joints_handles = get_joints_handles(joints_paths)
     delta_time = 15
-    position_1 = np.deg2rad(np.array([30,15,0,0,0,0]))
-    position_2 = np.deg2rad(np.array([90,60,-50,0,0,0]))
-
+    # Definindo as posições das juntas.
+    position_1 = np.deg2rad(np.array([25,15,0,0,0,0]))
+    position_2 = np.deg2rad(np.array([90,60,-10,0,0,0]))
+    position_3 = np.deg2rad(np.array([140,70,-10,0,0,0]))
+    position_4 = np.deg2rad(np.array([140,-20,70,0,20,0]))
+    position_5 = np.deg2rad(np.array([190,-20,70,0,50,0]))
+    position_6 = np.deg2rad(np.array([240,0,20,45,0,0]))
+    position_7 = np.deg2rad(np.array([270,30,0,0,0,0]))
+    position_8 = np.deg2rad(np.array([360,50,0,0,0,0]))
+    position_9 = np.deg2rad(np.array([360,-90,30,0,0,0]))
     sim.setStepping(True)
     sim.startSimulation()
     move_to_joints_position(joints_handles,position_1,delta_time)
-    start_time = sim.getSimulationTime()
-    print("Fim do loop.")
     move_to_joints_position(joints_handles,position_2,delta_time,'close')
-
-
+    move_to_joints_position(joints_handles,position_3,delta_time,'close')
+    move_to_joints_position(joints_handles,position_4,delta_time,'close')
+    move_to_joints_position(joints_handles,position_5,delta_time,'close')
+    move_to_joints_position(joints_handles,position_6,delta_time,'open')
+    move_to_joints_position(joints_handles,position_7,delta_time,'open')
+    move_to_joints_position(joints_handles,position_8,delta_time,'open')
+    move_to_joints_position(joints_handles,position_9,delta_time,'open')
+    plot_joint_histories(global_joints_position_hist,title="Histórico de posições na trajetória.",filename='juntas_teste.pdf')
 def example_plot():
     initial_position = 0
     initial_velocity = 0
